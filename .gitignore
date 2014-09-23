@@ -1,0 +1,15 @@
+# .gitignore
+
+Debug/
+Release/
+
+# Emacs junk:
+\#*\#
+
+# Visual Studio junk:
+*.sdf
+*.opensdf
+*.suo
+
+# Other junk:
+*~
