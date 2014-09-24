@@ -87,10 +87,12 @@ int main(int argc, int argv[]) {
     printf("Exiting.\n");
     
     // Cleanup:
+    txDisableConnection(g_etContext);
     txUnregisterConnectionStateChangedHandler(g_etContext,
                                               hConnectionStateChangedTicket);
     txUnregisterStateChangedHandler(g_etContext, hPresenceStateChangedTicket);
     txShutdownContext(g_etContext, TX_CLEANUPTIMEOUT_DEFAULT, TX_FALSE);
+    txReleaseObject(&g_hInteractorSnapshot);
     txReleaseContext(&g_etContext);
     return 0;
 }
