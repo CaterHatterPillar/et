@@ -1,15 +1,23 @@
 #include <stdio.h>
 #include <conio.h>
 #include <assert.h>
+#include <Windows.h>
 
 #define TOBII_TX_DETAIL
 #include <eyex\EyeX.h>
 
 #pragma comment (lib, "Tobii.EyeX.Client.lib")
 
+//#define ET_DEBUG
+#define ET_PEEKABOO
+#define ET_GAZESTREAM
+
 static TX_CONTEXTHANDLE g_etContext = TX_EMPTY_HANDLE;
+static TX_HANDLE g_hInteractorSnapshot = TX_EMPTY_HANDLE;
+static const TX_STRING g_interactorId = "et";
 
 void onStateReceived(TX_HANDLE p_hStateBag);
+void onGazeEvent(TX_HANDLE p_hGazeDataBehavior);
 // Callbacks:
 void TX_CALLCONVENTION cbOnEngineConnectionStateChanged(
                         TX_CONNECTIONSTATE p_connectionState,
@@ -17,13 +25,18 @@ void TX_CALLCONVENTION cbOnEngineConnectionStateChanged(
 void TX_CALLCONVENTION cbOnPresenceStateChanged(
                         TX_CONSTHANDLE p_hAsyncData,
                         TX_USERPARAM p_userParam);
+void TX_CALLCONVENTION cbOnEvent(TX_CONSTHANDLE p_hAsyncData,
+                                 TX_USERPARAM p_userParam);
+void TX_CALLCONVENTION cbOnSnapshotCommitted(TX_CONSTHANDLE p_hAsyncData,
+                                             TX_USERPARAM p_param);
 
 int main(int argc, int argv[]) {
     printf("Eye Tracking MWE using the Tobii EyeX SDK"
            " with the EyeX controller devkit.\n");
 
-    TX_TICKET hConnectionStateChangedTicket = TX_INVALID_TICKET;
+    TX_TICKET hEventHandlerTicket = TX_INVALID_TICKET;
     TX_TICKET hPresenceStateChangedTicket = TX_INVALID_TICKET;
+    TX_TICKET hConnectionStateChangedTicket = TX_INVALID_TICKET;
 
     // Create EyeX engine context and register observers on state changes:
     TX_RESULT isInitialized = txInitializeEyeX(
@@ -31,6 +44,19 @@ int main(int argc, int argv[]) {
                                              NULL, NULL, NULL, NULL);
     if(isInitialized==TX_RESULT_OK) {
         isInitialized = txCreateContext(&g_etContext, TX_FALSE);
+    }
+    if(isInitialized==TX_RESULT_OK) {
+        TX_HANDLE hInteractor = TX_EMPTY_HANDLE;
+        TX_GAZEPOINTDATAPARAMS params = {
+            TX_GAZEPOINTDATAMODE_LIGHTLYFILTERED
+        };
+        bool success = txCreateGlobalInteractorSnapshot(
+                        g_etContext, g_interactorId,
+                        &g_hInteractorSnapshot, &hInteractor)==TX_RESULT_OK;
+        success &= txCreateGazePointDataBehavior(hInteractor,
+                                                 &params)==TX_RESULT_OK;
+        isInitialized = success==true ? TX_RESULT_OK : TX_RESULT_UNKNOWN;
+        txReleaseObject(&hInteractor);
     }
     if(isInitialized==TX_RESULT_OK) {
         isInitialized = txRegisterConnectionStateChangedHandler(
@@ -42,6 +68,11 @@ int main(int argc, int argv[]) {
                          g_etContext, &hPresenceStateChangedTicket,
                          TX_STATEPATH_USERPRESENCE, cbOnPresenceStateChanged,
                          NULL);
+    }
+    if(isInitialized==TX_RESULT_OK) {
+        isInitialized = txRegisterEventHandler(g_etContext,
+                                               &hEventHandlerTicket,
+                                               cbOnEvent, NULL);
     }
     if(isInitialized==TX_RESULT_OK) {
         isInitialized = txEnableConnection(g_etContext);
@@ -102,10 +133,22 @@ void onStateReceived(TX_HANDLE p_hStateBag) {
     txReleaseObject(&p_hStateBag);
 }
 
+
+void TX_CALLCONVENTION cbOnSnapshotCommitted(TX_CONSTHANDLE p_hAsyncData,
+                                             TX_USERPARAM p_param) {
+    TX_RESULT result = TX_RESULT_UNKNOWN;
+    txGetAsyncDataResultCode(p_hAsyncData, &result);
+    assert(result==TX_RESULT_OK || result==TX_RESULT_CANCELLED);
+}
+
 void TX_CALLCONVENTION cbOnEngineConnectionStateChanged(
                         TX_CONNECTIONSTATE p_connectionState,
                         TX_USERPARAM p_userParam) {
     if(p_connectionState==TX_CONNECTIONSTATE_CONNECTED) {
+        TX_RESULT success = txCommitSnapshotAsync(g_hInteractorSnapshot,
+                                                  cbOnSnapshotCommitted, NULL);
+        assert(success==TX_RESULT_OK);
+
         TX_HANDLE hStateBag = TX_EMPTY_HANDLE;
         printf("Successfully initialized EyeX context; application is thus"
                " connected to the EyeX Engine.\n");
@@ -115,6 +158,7 @@ void TX_CALLCONVENTION cbOnEngineConnectionStateChanged(
 }
 void TX_CALLCONVENTION cbOnPresenceStateChanged(TX_CONSTHANDLE p_hAsyncData,
                                                 TX_USERPARAM p_userParam) {
+#ifdef ET_PEEKABOO
     TX_RESULT result = TX_RESULT_UNKNOWN;
     TX_HANDLE hStateBag = TX_EMPTY_HANDLE;
     
@@ -134,4 +178,33 @@ void TX_CALLCONVENTION cbOnPresenceStateChanged(TX_CONSTHANDLE p_hAsyncData,
             }
         }
     }
+#endif // ET_PEEKABOO
+}
+
+void onGazeEvent(TX_HANDLE p_hGazeDataBehavior) {
+    TX_GAZEPOINTDATAEVENTPARAMS eventParams;
+    TX_RESULT success = txGetGazePointDataEventParams(p_hGazeDataBehavior,
+                                                      &eventParams);
+    assert(success==TX_RESULT_OK);
+#ifdef ET_GAZESTREAM
+    printf("%.0f ms: [%.1f, %.1f]\n", eventParams.Timestamp,
+           eventParams.X, eventParams.Y);
+#endif // ET_GAZESTREAM
+}
+
+void TX_CALLCONVENTION cbOnEvent(TX_CONSTHANDLE p_hAsyncData,
+                                 TX_USERPARAM p_userParam) {
+    TX_HANDLE hEvent = TX_EMPTY_HANDLE;
+    txGetAsyncDataContent(p_hAsyncData, &hEvent);
+#ifdef ET_DEBUG
+    OutputDebugStringA(txDebugObject(hEvent));
+#endif // ET_DEBUG
+    TX_HANDLE hBehavior = TX_EMPTY_HANDLE;
+    TX_RESULT success = txGetEventBehavior(hEvent, &hBehavior,
+                                           TX_BEHAVIORTYPE_GAZEPOINTDATA);
+    if(success==TX_RESULT_OK) {
+        onGazeEvent(hBehavior);
+        txReleaseObject(&hBehavior);
+    }
+    txReleaseObject(&hEvent);
 }
