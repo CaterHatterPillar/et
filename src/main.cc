@@ -10,7 +10,8 @@
 
 //#define ET_DEBUG
 #define ET_PEEKABOO
-#define ET_GAZESTREAM
+//#define ET_GAZESTREAM // or...
+#define ET_FIXATIONSTREAM
 
 static TX_CONTEXTHANDLE g_etContext = TX_EMPTY_HANDLE;
 static TX_HANDLE g_hInteractorSnapshot = TX_EMPTY_HANDLE;
@@ -18,6 +19,7 @@ static const TX_STRING g_interactorId = "et";
 
 void onStateReceived(TX_HANDLE p_hStateBag);
 void onGazeEvent(TX_HANDLE p_hGazeDataBehavior);
+void onFixationEvent(TX_HANDLE p_hFixationDataBehavior);
 // Callbacks:
 void TX_CALLCONVENTION cbOnEngineConnectionStateChanged(
                         TX_CONNECTIONSTATE p_connectionState,
@@ -46,15 +48,27 @@ int main(int argc, int argv[]) {
         isInitialized = txCreateContext(&g_etContext, TX_FALSE);
     }
     if(isInitialized==TX_RESULT_OK) {
+        bool success;
         TX_HANDLE hInteractor = TX_EMPTY_HANDLE;
+#ifdef ET_GAZESTREAM
         TX_GAZEPOINTDATAPARAMS params = {
             TX_GAZEPOINTDATAMODE_LIGHTLYFILTERED
         };
-        bool success = txCreateGlobalInteractorSnapshot(
-                        g_etContext, g_interactorId,
-                        &g_hInteractorSnapshot, &hInteractor)==TX_RESULT_OK;
+        success = txCreateGlobalInteractorSnapshot(
+                   g_etContext, g_interactorId,
+                   &g_hInteractorSnapshot, &hInteractor)==TX_RESULT_OK;
         success &= txCreateGazePointDataBehavior(hInteractor,
                                                  &params)==TX_RESULT_OK;
+#elif defined(ET_FIXATIONSTREAM)
+        TX_FIXATIONDATAPARAMS params = {
+            TX_FIXATIONDATAMODE_SENSITIVE
+        };
+        success = txCreateGlobalInteractorSnapshot(
+                   g_etContext, g_interactorId,
+                   &g_hInteractorSnapshot, &hInteractor)==TX_RESULT_OK;
+        success &= txCreateFixationDataBehavior(hInteractor,
+                                                &params)==TX_RESULT_OK;
+#endif
         isInitialized = success==true ? TX_RESULT_OK : TX_RESULT_UNKNOWN;
         txReleaseObject(&hInteractor);
     }
@@ -194,6 +208,39 @@ void onGazeEvent(TX_HANDLE p_hGazeDataBehavior) {
 #endif // ET_GAZESTREAM
 }
 
+void onFixationEvent(TX_HANDLE p_hFixationDataBehavior) {
+    TX_FIXATIONDATAEVENTPARAMS eventParams;
+    TX_FIXATIONDATAEVENTTYPE eventType;
+    char* eventDesc;
+
+    TX_RESULT success = txGetFixationDataEventParams(p_hFixationDataBehavior,
+                                                     &eventParams);
+    if(success==TX_RESULT_OK) {
+        eventType = eventParams.EventType;
+        switch(eventType) {
+        case TX_FIXATIONDATAEVENTTYPE_DATA:
+            eventDesc = "Data";
+            break;
+        case TX_FIXATIONDATAEVENTTYPE_END:
+            eventDesc = "End";
+            break;
+        default:
+            eventDesc = "Begin";
+            break;
+        }
+        printf("%.0f ms: [%.1f, %.1f] (Fixation %s)\n",
+               eventParams.Timestamp, eventParams.X, eventParams.Y, eventDesc);
+    } else {
+        printf("Failed to interpret fixation event. Aborting...");
+        assert(0);
+    }
+}
+
+#ifdef ET_GAZESTREAM
+const TX_BEHAVIORTYPE eventType = TX_BEHAVIORTYPE_GAZEPOINTDATA;
+#elif defined(ET_FIXATIONSTREAM)
+const TX_BEHAVIORTYPE eventType = TX_BEHAVIORTYPE_FIXATIONDATA;
+#endif
 void TX_CALLCONVENTION cbOnEvent(TX_CONSTHANDLE p_hAsyncData,
                                  TX_USERPARAM p_userParam) {
     TX_HANDLE hEvent = TX_EMPTY_HANDLE;
@@ -203,9 +250,13 @@ void TX_CALLCONVENTION cbOnEvent(TX_CONSTHANDLE p_hAsyncData,
 #endif // ET_DEBUG
     TX_HANDLE hBehavior = TX_EMPTY_HANDLE;
     TX_RESULT success = txGetEventBehavior(hEvent, &hBehavior,
-                                           TX_BEHAVIORTYPE_GAZEPOINTDATA);
+                                           eventType);
     if(success==TX_RESULT_OK) {
-        onGazeEvent(hBehavior);
+#ifdef ET_GAZESTREAM
+onGazeEvent(hBehavior);
+#elif defined(ET_FIXATIONSTREAM)
+onFixationEvent(hBehavior);
+#endif
         txReleaseObject(&hBehavior);
     }
     txReleaseObject(&hEvent);
