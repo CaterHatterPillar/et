@@ -13,6 +13,9 @@
 //#define ET_GAZESTREAM // or...
 #define ET_FIXATIONSTREAM
 
+#define ET_FIXATIONSTREAM_SLOW
+//#define ET_FIXATIONSTREAM_SENSITIVE
+
 static TX_CONTEXTHANDLE g_etContext = TX_EMPTY_HANDLE;
 static TX_HANDLE g_hInteractorSnapshot = TX_EMPTY_HANDLE;
 static const TX_STRING g_interactorId = "et";
@@ -61,7 +64,11 @@ int main(int argc, int argv[]) {
                                                  &params)==TX_RESULT_OK;
 #elif defined(ET_FIXATIONSTREAM)
         TX_FIXATIONDATAPARAMS params = {
+#ifdef ET_FIXATIONSTREAM_SENSITIVE
             TX_FIXATIONDATAMODE_SENSITIVE
+#elif defined(ET_FIXATIONSTREAM_SLOW)
+            TX_FIXATIONDATAMODE_SLOW
+#endif
         };
         success = txCreateGlobalInteractorSnapshot(
                    g_etContext, g_interactorId,
