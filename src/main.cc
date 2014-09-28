@@ -13,7 +13,7 @@
 //#define ET_GAZESTREAM // or...
 #define ET_FIXATIONSTREAM
 
-#define ET_FIXATIONSTREAM_SLOW
+#define ET_FIXATIONSTREAM_SLOW // or...
 //#define ET_FIXATIONSTREAM_SENSITIVE
 
 static TX_CONTEXTHANDLE g_etContext = TX_EMPTY_HANDLE;
@@ -260,9 +260,9 @@ void TX_CALLCONVENTION cbOnEvent(TX_CONSTHANDLE p_hAsyncData,
                                            eventType);
     if(success==TX_RESULT_OK) {
 #ifdef ET_GAZESTREAM
-onGazeEvent(hBehavior);
+        onGazeEvent(hBehavior);
 #elif defined(ET_FIXATIONSTREAM)
-onFixationEvent(hBehavior);
+        onFixationEvent(hBehavior);
 #endif
         txReleaseObject(&hBehavior);
     }
